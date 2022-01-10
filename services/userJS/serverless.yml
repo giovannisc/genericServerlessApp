@@ -1,0 +1,128 @@
+service: usersJS
+
+plugins:
+  - serverless-bundle
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+custom: ${file(../../serverless.common.yml):custom}
+
+package:
+  individually: true
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: dev
+  region: us-east-1
+  tracing:
+    apiGateway: true
+    lambda: true
+
+  environment:
+    stage: ${self:custom.stage}
+    tableName: !ImportValue ${self:custom.sstApp}-ExtTableName
+
+  apiGateway:
+    shouldStartNameWithService: true
+
+  iam:
+    role:
+      statements:
+        - ${file(../../serverless.common.yml):lambdaPolicyXRay}
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeTable
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - !ImportValue ${self:custom.sstApp}-ExtTableArn
+            - !ImportValue ${self:custom.sstApp}-ExtTableArnIndex
+
+  lambdaHashingVersion: 20201221
+
+functions:
+  create:
+    handler: create.handler
+    events:
+      - http:
+          path: user
+          method: post
+          cors: true
+  get:
+    handler: get.handler
+    events:
+      - http:
+          path: user/{userId}
+          method: get
+          cors: true
+          authorizer: aws_iam
+          request:
+            parameters:
+              paths:
+                userId: false
+  update:
+    handler: update.handler
+    events:
+      - http:
+          path: user/{userId}
+          method: put
+          cors: true
+          authorizer: aws_iam
+          request:
+            parameters:
+              paths:
+                userId: false
+  delete:
+    handler: delete.handler
+    events:
+      - http:
+          path: user/{userId}
+          method: delete
+          cors: true
+          authorizer: aws_iam
+          request:
+            parameters:
+              paths:
+                userId: false
+  list:
+    handler: list.handler
+    events:
+      - http:
+          path: users
+          method: get
+          cors: true
+          authorizer: aws_iam
+          request:
+            parameters:
+              querystrings:
+                limit: true
+                offset: true
+                userSearch: false
+resources:
+  # API Gateway Errors
+  - ${file(resources/api-gateway-errors.yml)}
+  # Cognito Identity Pool Policy
+  - ${file(resources/cognito-policy.yml)}
+
+# you don't need use this on new services because this needs to be create once.
+  - Outputs:
+      ApiGatewayRestApiId:
+        Value:
+          Ref: ApiGatewayRestApi
+        Export:
+          Name: ${self:custom.stage}-ExtApiGatewayRestApiId
+
+      ApiGatewayRestApiRootResourceId:
+        Value:
+           Fn::GetAtt:
+            - ApiGatewayRestApi
+            - RootResourceId
+        Export:
+          Name: ${self:custom.stage}-ExtApiGatewayRestApiRootResourceId
